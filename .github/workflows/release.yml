@@ -76,4 +76,5 @@ jobs:
         with:
           files: |
             install.sh
+            uninstall.sh
             install.ps1

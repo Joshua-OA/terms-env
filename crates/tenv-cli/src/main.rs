@@ -1,5 +1,5 @@
 use clap::{Parser, Subcommand};
-use std::io::{BufRead, IsTerminal, Read};
+use std::io::{BufRead, IsTerminal, Read, Write};
 use std::path::PathBuf;
 use std::process::ExitCode;
 use tenv_cli::ui;
@@ -88,6 +88,8 @@ enum Cmd {
     RelaySetup,
     /// Point this machine at a team relay ("default" restores n0 public).
     ConfigSet { relay: String },
+    /// Permanently remove the vault, relay config, and stored key.
+    Uninstall,
 }
 
 fn main() -> ExitCode {
@@ -136,6 +138,7 @@ async fn run(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
         Cmd::Import { path } => cmd_import(path, cli).await,
         Cmd::RelaySetup => cmd_relay_setup(),
         Cmd::ConfigSet { relay } => cmd_config_set(relay),
+        Cmd::Uninstall => cmd_uninstall(cli),
     }
 }
 
@@ -579,6 +582,51 @@ fn cmd_config_set(relay: &str) -> Result<(), Box<dyn std::error::Error>> {
     match cfg.relay_url {
         Some(url) => println!("relay set to {url}"),
         None => println!("relay reset to default (n0 public)"),
+    }
+    Ok(())
+}
+
+fn cmd_uninstall(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
+    let home = vault::home_dir();
+    if !vault::exists(&home) {
+        return Err(format!("no vault found at {}", home.display()).into());
+    }
+
+    println!("uninstall will PERMANENTLY remove:");
+    println!("  - the vault at {}", home.display());
+    println!("  - the vault wrapping key in your OS keychain");
+    println!("  - the relay config, if any");
+    println!(".env files in your projects on disk are NOT touched.");
+    println!("This cannot be undone; a new `tnv init` starts from zero.");
+
+    if !cli.yes {
+        if !ui::is_interactive() {
+            return Err("refusing to uninstall without --yes in a non-interactive session".into());
+        }
+        print!("type DELETE to confirm: ");
+        std::io::stdout().flush()?;
+        let mut line = String::new();
+        std::io::stdin().lock().read_line(&mut line)?;
+        if line.trim() != "DELETE" {
+            return Err("aborted; vault untouched".into());
+        }
+    }
+
+    let keys = vault::select_keystore();
+    let report = vault::destroy(&home, keys.as_ref())?;
+
+    println!("removed vault file");
+    if report.config_file {
+        println!("removed relay config");
+    }
+    if report.key_removed {
+        println!("removed key from OS keychain");
+    }
+    print!("the tnv binary itself is still installed; remove it with ");
+    if cfg!(windows) {
+        println!("Remove-Item \"$env:LOCALAPPDATA\\Programs\\terms-env\\tnv.exe\"");
+    } else {
+        println!("`rm ~/.local/bin/tnv` (or your --prefix bin dir).");
     }
     Ok(())
 }

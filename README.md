@@ -70,6 +70,27 @@ Prebuilt assets per release — macOS arm64/x64, Linux x64, Windows x64,
 each with a `.sha256` checksum:
 https://github.com/Joshua-OA/terms-env/releases
 
+Building from source on Linux needs `libdbus-1-dev` and `pkg-config`
+(`sudo apt install libdbus-1-dev pkg-config`) for the keychain backend.
+The prebuilt binaries already have this handled.
+
+## Uninstall
+
+Wipe vault data, relay config, and the keychain key (asks for
+confirmation; `--yes` skips; `.env` files on disk are untouched):
+
+```bash
+tnv uninstall
+```
+
+Remove the binary too:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Joshua-OA/terms-env/main/uninstall.sh | sh
+```
+
+Both in one step: `... | sh -s -- --purge`
+
 ## Daily commands
 
 | Command | Purpose |

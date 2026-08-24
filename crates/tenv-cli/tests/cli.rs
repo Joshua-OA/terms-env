@@ -241,3 +241,60 @@ fn sync_without_link_fails_with_hint() {
         .failure()
         .stderr(predicates::str::contains("not linked"));
 }
+
+#[test]
+fn uninstall_yes_removes_vault_then_reports_missing() {
+    let env = Env::new();
+    let pass = write_passphrase_file(&env._guard, "pass", "hunter2hunter2");
+
+    env.cmd()
+        .args([
+            "--passphrase-file",
+            pass.to_str().unwrap(),
+            "init",
+            "--passphrase",
+        ])
+        .assert()
+        .success();
+
+    env.cmd()
+        .args(["--yes", "uninstall"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("removed vault file"));
+
+    // The vault is gone; a second uninstall must fail, and list must too.
+    env.cmd().arg("uninstall").assert().failure();
+    env.cmd()
+        .args(["--passphrase-file", pass.to_str().unwrap(), "list"])
+        .assert()
+        .failure();
+}
+
+#[test]
+fn uninstall_without_yes_denied_in_non_interactive_session() {
+    let env = Env::new();
+    let pass = write_passphrase_file(&env._guard, "pass", "hunter2hunter2");
+
+    env.cmd()
+        .args([
+            "--passphrase-file",
+            pass.to_str().unwrap(),
+            "init",
+            "--passphrase",
+        ])
+        .assert()
+        .success();
+
+    // Tests run without a TTY; default-deny must protect the vault.
+    env.cmd()
+        .arg("uninstall")
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("--yes"));
+
+    env.cmd()
+        .args(["--passphrase-file", pass.to_str().unwrap(), "list"])
+        .assert()
+        .success();
+}

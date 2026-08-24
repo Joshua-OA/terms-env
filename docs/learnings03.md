@@ -98,3 +98,59 @@ Continues from `learnings02.md` (Stages 3-6).
 2. Run the curl one-liner on a clean mac + Linux box; run `irm | iex` on
    a clean Windows VM; confirm PATH hint / PATH update messaging.
 3. Then circle back to Homebrew per "Deferred" above.
+
+---
+
+## Stage 8 — v0.1.1: keychain hotfix, uninstall command
+
+### What was built
+- **`tnv uninstall`**: new CLI subcommand. Prints exactly what will be
+  removed, requires typing `DELETE` on a TTY or `--yes` (non-TTY without
+  `--yes` is default-deny, matching house rules). Core side:
+  `KeyStore::delete()` added to the trait (returns bool: did an entry
+  exist; idempotent on absent keys), `vault::destroy(home, keys)` →
+  `DestroyReport { vault_file, config_file, key_removed }`. Destroys
+  vault.enc + config.json, removes the home dir only when empty (user's
+  own files are safe), then deletes the keychain key. The binary itself
+  is never self-deleted (unsafe on Windows); the CLI prints the removal
+  hint instead.
+- **`uninstall.sh`**: binary remover for curl users. `--purge` runs
+  `tnv uninstall --yes` first; default keeps data and says so. Attached
+  to releases alongside install.sh / install.ps1.
+- Tests: 5 core (destroy removes vault+key+empty home; keeps foreign
+  files in home; NotFound without vault; idempotent keystore delete) +
+  2 CLI (yes-flow removes then errors on repeat; non-TTY without --yes
+  denied and vault intact). Suite now 66+ tests.
+
+### What went wrong
+1. **The released v0.1.0 keychain mode never touched any keychain.**
+   `keyring = "3"` with no features compiles to the crate's *mock*
+   credential store (per-`Entry` memory, zero persistence) on every OS.
+   `init` wrote the key into one Entry and read it back from a fresh
+   Entry → NoEntry → "vault key not found in keychain". All 66 tests
+   missed it because they inject `FileKeyStore` by design — the mock
+   failure mode is invisible to DI tests. Fix: platform-gated
+   `[target.'cfg(...)' dependencies]` with `apple-native` (macOS),
+   `windows-native`, `sync-secret-service` + `crypto-rust` (Linux).
+   Lesson: when a dependency's default exists "for testing", the
+   production path needs its own smoke test on real hardware — which is
+   exactly what caught it.
+2. **First keyring fix broke the Linux CI build**: the combo feature
+   `linux-native-sync-persistent` pulls `dbus-secret-service` →
+   `libdbus-sys` → needs system `libdbus-1-dev` + `pkg-config`. Simplified
+   to plain `sync-secret-service` and added an apt-get step (Linux-only)
+   to both workflows; README now documents the source-build deps. Lesson:
+   Linux keyring backends trade system deps against persistence — check
+   a crate's *transitive C dependencies* before picking features, not
+   just its Rust API.
+3. Test-authoring bug of my own: asserted the keystore file exists after
+   a *passphrase-mode* init, which never writes one. Keychain-mode
+   (`init` without `--passphrase`) is the path that stores keys.
+
+### Verified end state
+- Local: full suite green, clippy `-D warnings` clean, fmt clean.
+- Real-hardware keychain round trip proven on the Intel Mac: sandboxed
+  `TENV_HOME` + debug binary → `init` → `list` → keychain item present
+  via `security find-generic-password` → cleaned up.
+- Pending: v0.1.1 tag → CI builds → curl one-liner re-test against the
+  new release assets (user-run checklist).

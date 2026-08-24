@@ -75,6 +75,9 @@ pub type Result<T> = std::result::Result<T, VaultError>;
 pub trait KeyStore {
     fn store(&self) -> Result<()>;
     fn load_key(&self) -> Result<Option<[u8; 32]>>;
+    /// Remove the stored wrapping key. Returns whether an entry existed.
+    /// Deleting an already-absent key is not an error.
+    fn delete(&self) -> Result<bool>;
 }
 
 /// Production: the OS keychain (macOS Keychain / Windows Credential Manager /
@@ -108,6 +111,16 @@ impl KeyStore for OsKeyring {
             Err(e) => Err(VaultError::Keychain(e.to_string())),
         }
     }
+
+    fn delete(&self) -> Result<bool> {
+        let entry = keyring::Entry::new(KEYCHAIN_SERVICE, KEYCHAIN_USER)
+            .map_err(|e| VaultError::Keychain(e.to_string()))?;
+        match entry.delete_credential() {
+            Ok(()) => Ok(true),
+            Err(keyring::Error::NoEntry) => Ok(false),
+            Err(e) => Err(VaultError::Keychain(e.to_string())),
+        }
+    }
 }
 
 /// Test-only file-backed keystore, selected by TENV_TEST_KEYSTORE. Never used
@@ -127,6 +140,14 @@ impl KeyStore for FileKeyStore {
                 .map(Some)
                 .map_err(|_| VaultError::Keychain("test keystore content invalid".into())),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(e) => Err(VaultError::Io(e.to_string())),
+        }
+    }
+
+    fn delete(&self) -> Result<bool> {
+        match fs::remove_file(&self.0) {
+            Ok(()) => Ok(true),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
             Err(e) => Err(VaultError::Io(e.to_string())),
         }
     }
@@ -218,6 +239,44 @@ pub fn init(home: &Path, passphrase: Option<&str>, keys: &dyn KeyStore) -> Resul
     };
     vault.save_with(keys)?;
     Ok(vault)
+}
+
+/// What [`destroy`] removed, for user-facing summaries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DestroyReport {
+    pub vault_file: bool,
+    pub config_file: bool,
+    pub key_removed: bool,
+}
+
+/// Permanently remove everything terms-env keeps on this machine: the vault
+/// file, the relay config, and the OS-stored wrapping key. Fails with
+/// [`VaultError::NotFound`] when no vault exists. The binary itself is never
+/// touched (a running executable cannot be removed safely on all platforms);
+/// the CLI prints a removal hint instead.
+pub fn destroy(home: &Path, keys: &dyn KeyStore) -> Result<DestroyReport> {
+    if !exists(home) {
+        return Err(VaultError::NotFound);
+    }
+    fs::remove_file(vault_file(home))?;
+
+    let config_file = match fs::remove_file(home.join("config.json")) {
+        Ok(()) => true,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
+        Err(e) => return Err(VaultError::Io(e.to_string())),
+    };
+
+    // The home dir should now be empty; a non-empty one (user's own files)
+    // is deliberately left in place.
+    let _ = fs::remove_dir(home);
+
+    let key_removed = keys.delete()?;
+
+    Ok(DestroyReport {
+        vault_file: true,
+        config_file,
+        key_removed,
+    })
 }
 
 /// Decrypt and load an existing vault.

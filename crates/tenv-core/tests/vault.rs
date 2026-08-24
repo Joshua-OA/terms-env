@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
-use tenv_core::vault::{self, FileKeyStore, VaultError};
+use tenv_core::vault::{self, FileKeyStore, KeyStore, VaultError};
 
 struct Sandbox {
     _guard: TempDir,
@@ -155,4 +155,52 @@ fn atomic_write_leaves_no_tmp_file_behind() {
         .filter(|n| n.ends_with(".tmp"))
         .collect();
     assert!(leftovers.is_empty(), "stray tmp files: {leftovers:?}");
+}
+
+#[test]
+fn destroy_removes_vault_config_key_and_empty_home() {
+    let sb = sandbox();
+    // Keychain-mode init is what stores a key in the keystore.
+    vault::init(&sb.home, None, &sb.keys).unwrap();
+    assert!(vault::exists(&sb.home));
+    assert!(sb.keys.0.exists(), "keystore file must exist pre-destroy");
+
+    let report = vault::destroy(&sb.home, &sb.keys).unwrap();
+    assert!(report.vault_file);
+    assert!(!report.config_file, "no config.json was ever written");
+    assert!(report.key_removed);
+
+    assert!(!vault::exists(&sb.home));
+    assert!(!sb.keys.0.exists(), "keystore file must be gone");
+    assert!(!sb.home.exists(), "emptied home dir should be removed");
+}
+
+#[test]
+fn destroy_reports_config_file_when_present_and_keeps_foreign_files() {
+    let sb = sandbox();
+    vault::init(&sb.home, Some("passphrase-1"), &sb.keys).unwrap();
+    fs::write(sb.home.join("config.json"), b"{}\n").unwrap();
+    fs::write(sb.home.join("user-notes.txt"), b"mine").unwrap();
+
+    let report = vault::destroy(&sb.home, &sb.keys).unwrap();
+    assert!(report.config_file);
+    assert!(sb.home.exists(), "non-empty home must be left alone");
+    assert_eq!(fs::read(sb.home.join("user-notes.txt")).unwrap(), b"mine");
+}
+
+#[test]
+fn destroy_without_vault_fails_and_keeps_key() {
+    let sb = sandbox();
+    assert!(matches!(
+        vault::destroy(&sb.home, &sb.keys),
+        Err(VaultError::NotFound)
+    ));
+}
+
+#[test]
+fn destroy_is_idempotent_at_the_keystore_level() {
+    let sb = sandbox();
+    vault::init(&sb.home, None, &sb.keys).unwrap();
+    vault::destroy(&sb.home, &sb.keys).unwrap();
+    assert!(!sb.keys.delete().unwrap(), "second delete finds nothing");
 }
