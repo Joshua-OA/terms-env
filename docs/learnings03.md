@@ -154,3 +154,8 @@ Continues from `learnings02.md` (Stages 3-6).
   via `security find-generic-password` → cleaned up.
 - Pending: v0.1.1 tag → CI builds → curl one-liner re-test against the
   new release assets (user-run checklist).
+- **Confirmed live:** v0.1.1 released with all four platform builds
+  green; official curl install ran clean on the Intel Mac (silent
+  download, checksum verified); `tnv init` created the vault with OS
+  keychain unlock; `tnv list` round-tripped ("vault is empty");
+  `tnv --version` reports 0.1.1. Stage complete.
