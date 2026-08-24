@@ -47,7 +47,7 @@ need_cmd() { command -v "$1" >/dev/null 2>&1 || fail "$1 is required but was not
 
 fetch() {
   if command -v curl >/dev/null 2>&1; then
-    curl -fSL --retry 3 --retry-delay 2 -o "$2" "$1"
+    curl -fsSL --retry 3 --retry-delay 2 -o "$2" "$1"
   elif command -v wget >/dev/null 2>&1; then
     wget -qO "$2" "$1"
   else
@@ -84,13 +84,15 @@ latest_tag() {
   printf '%s' "$tag"
 }
 
-sha256_tool() {
+sha256_of() {
+  # Prints the lowercase SHA-256 digest of $1. Field position differs by
+  # tool: sha256sum/shasum lead with the digest, openssl trails with it.
   if command -v sha256sum >/dev/null 2>&1; then
-    printf 'sha256sum'
+    sha256sum "$1" | awk '{print $1}'
   elif command -v shasum >/dev/null 2>&1; then
-    printf 'shasum -a 256'
+    shasum -a 256 "$1" | awk '{print $1}'
   elif command -v openssl >/dev/null 2>&1; then
-    printf 'openssl dgst -sha256'
+    openssl dgst -sha256 "$1" | awk '{print $NF}'
   else
     return 1
   fi
@@ -114,10 +116,11 @@ main() {
 
   if [ "$VERIFY" -eq 1 ]; then
     log "verifying SHA-256 checksum..."
-    tool=$(sha256_tool) || fail "no SHA-256 tool found (sha256sum, shasum, openssl); use --no-verify at your own risk"
+    command -v sha256sum >/dev/null 2>&1 || command -v shasum >/dev/null 2>&1 || command -v openssl >/dev/null 2>&1 \
+      || fail "no SHA-256 tool found (sha256sum, shasum, openssl); use --no-verify at your own risk"
     fetch "${base}.sha256" "${tmpdir}/${asset}.sha256"
     expected=$(awk '{print $1}' "${tmpdir}/${asset}.sha256")
-    actual=$($tool "${tmpdir}/${asset}" | awk '{print $NF}')
+    actual=$(sha256_of "${tmpdir}/${asset}")
     [ "$expected" = "$actual" ] || fail "checksum mismatch:
   expected: ${expected}
   actual:   ${actual}"
