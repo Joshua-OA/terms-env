@@ -60,6 +60,18 @@ Continues from `learnings02.md` (Stages 3-6).
    fixed by bumping to v5; `softprops/action-gh-release@v2` cannot be
    fixed on our side (upstream still targets Node 20; GitHub force-runs
    it on Node 24) — cosmetic only, builds unaffected.
+5. **Live install test caught a real checksum-parsing bug.** The verify
+   step extracted the digest with `awk '{print $NF}'` (last field) —
+   correct for `openssl dgst` but wrong for `shasum`/`sha256sum`, where
+   the digest is the FIRST field and the path is last. Result: every
+   macOS/Linux install failed with "checksum mismatch" showing a file
+   path as the "actual" value. Fixed with a per-tool `sha256_of()`
+   helper. Lessons: (a) checksum tooling output formats are not
+   interchangeable — parse per tool; (b) the curl|sh path is exactly
+   why live smoke tests exist — this never appeared in local runs
+   because macOS has `shasum`, and the bug only fired on the
+   release-verify code path. Also quieted curl progress noise with
+   `-sS` (errors still surface).
 
 ### Deferred (deliberate)
 - **Homebrew**: skipped this stage by decision. Plan agreed on record:
