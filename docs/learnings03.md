@@ -159,3 +159,28 @@ Continues from `learnings02.md` (Stages 3-6).
   download, checksum verified); `tnv init` created the vault with OS
   keychain unlock; `tnv list` round-tripped ("vault is empty");
   `tnv --version` reports 0.1.1. Stage complete.
+
+---
+
+## Stage 9 — post-release polish: `tnv link` folder-name offer (unreleased)
+
+### What was built
+- `tnv link` with no argument no longer hard-errors. On a TTY it asks
+  `use folder name 'weavensign' as the project name? [Y/n]` (Enter = yes;
+  `n` falls through to a free-text name prompt). `--yes` adopts the
+  folder name silently for scripts. Non-TTY without `--yes` keeps the
+  default-deny: explicit usage error, vault untouched. Explicit
+  `tnv link <name>` behaves exactly as before.
+- `folder_name()` helper derives the candidate from `cwd.file_name()`,
+  with a clear error for nameless paths (filesystem root).
+- Tests +2: `--yes` adopts folder name end-to-end (link in a named temp
+  dir → `list` shows it); non-TTY no-arg link refused with the usage
+  hint while the vault stays empty.
+
+### What went wrong
+- Nothing runtime-side. One fmt pass fixed two line-wrap nits clippy/fmt
+  flagged on first compile; caught locally by the pre-commit checklist.
+
+### Verified end state
+- Full workspace suite 14/14 green, clippy `-D warnings`, fmt clean.
+- Ships in the next tag; v0.1.1 binaries keep the required-arg behavior.

@@ -298,3 +298,68 @@ fn uninstall_without_yes_denied_in_non_interactive_session() {
         .assert()
         .success();
 }
+
+#[test]
+fn link_yes_adopts_folder_name_without_prompting() {
+    let env = Env::new();
+    let pass = write_passphrase_file(&env._guard, "pass", "hunter2hunter2");
+
+    env.cmd()
+        .args([
+            "--passphrase-file",
+            pass.to_str().unwrap(),
+            "init",
+            "--passphrase",
+        ])
+        .assert()
+        .success();
+
+    let project = env._guard.path().join("folder-named-proj");
+    fs::create_dir_all(&project).unwrap();
+
+    env.cmd()
+        .args(["--passphrase-file", pass.to_str().unwrap(), "--yes", "link"])
+        .current_dir(&project)
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("folder-named-proj"));
+
+    env.cmd()
+        .args(["--passphrase-file", pass.to_str().unwrap(), "list"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("folder-named-proj"));
+}
+
+#[test]
+fn link_without_name_denied_in_non_interactive_session() {
+    let env = Env::new();
+    let pass = write_passphrase_file(&env._guard, "pass", "hunter2hunter2");
+
+    env.cmd()
+        .args([
+            "--passphrase-file",
+            pass.to_str().unwrap(),
+            "init",
+            "--passphrase",
+        ])
+        .assert()
+        .success();
+
+    let bare = env._guard.path().join("unlinked");
+    fs::create_dir_all(&bare).unwrap();
+
+    // No TTY and no --yes: refuse instead of guessing.
+    env.cmd()
+        .args(["--passphrase-file", pass.to_str().unwrap(), "link"])
+        .current_dir(&bare)
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("a project name is required"));
+
+    env.cmd()
+        .args(["--passphrase-file", pass.to_str().unwrap(), "list"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("vault is empty"));
+}

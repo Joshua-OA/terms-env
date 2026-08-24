@@ -1,6 +1,6 @@
 use clap::{Parser, Subcommand};
 use std::io::{BufRead, IsTerminal, Read, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use tenv_cli::ui;
 use tenv_core::crypto::{DeviceKeys, fingerprint};
@@ -51,7 +51,8 @@ enum Cmd {
         passphrase: bool,
     },
     /// Link the current directory to a project namespace.
-    Link { name: String },
+    /// Without a name, offers the current folder's name.
+    Link { name: Option<String> },
     /// Apply .env file changes from the current directory into its project.
     Sync,
     /// Add or update KEY=VALUE in the linked project.
@@ -113,7 +114,7 @@ fn tokio_runtime() -> tokio::runtime::Runtime {
 async fn run(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
     match &cli.cmd {
         Cmd::Init { passphrase } => cmd_init(*passphrase, cli),
-        Cmd::Link { name } => cmd_link(name, cli),
+        Cmd::Link { name } => cmd_link(name.as_deref(), cli),
         Cmd::Sync => cmd_sync(cli),
         Cmd::Add { pair } => cmd_add(pair, cli),
         Cmd::Rm { key } => cmd_rm(key, cli),
@@ -224,13 +225,58 @@ fn cmd_init(use_passphrase: bool, cli: &Cli) -> Result<(), Box<dyn std::error::E
     Ok(())
 }
 
-fn cmd_link(name: &str, cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
+fn cmd_link(name: Option<&str>, cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
     let mut v = open_vault(cli)?;
     let cwd = std::env::current_dir()?;
-    let canon = v.link(&cwd, name)?;
+
+    let name = match name {
+        Some(explicit) => explicit.to_string(),
+        None => {
+            let folder = folder_name(&cwd)?;
+            if cli.yes {
+                println!("linking as `{folder}` (--yes)");
+                folder
+            } else if ui::is_interactive() {
+                print!("use folder name '{folder}' as the project name? [Y/n] ");
+                std::io::stdout().flush()?;
+                let mut line = String::new();
+                std::io::stdin().lock().read_line(&mut line)?;
+                match line.trim().to_lowercase().as_str() {
+                    "" | "y" | "yes" => folder,
+                    "n" | "no" => {
+                        print!("project name: ");
+                        std::io::stdout().flush()?;
+                        let mut custom = String::new();
+                        std::io::stdin().lock().read_line(&mut custom)?;
+                        let custom = custom.trim().to_string();
+                        if custom.is_empty() {
+                            return Err("no project name given; aborted".into());
+                        }
+                        custom
+                    }
+                    other => return Err(format!("unrecognized answer '{other}'; aborted").into()),
+                }
+            } else {
+                return Err("a project name is required: tnv link <name>
+(in a terminal, plain `tnv link` offers the folder name)"
+                    .into());
+            }
+        }
+    };
+
+    let canon = v.link(&cwd, &name)?;
     v.save()?;
     println!("{canon} → {name}");
     Ok(())
+}
+
+fn folder_name(cwd: &Path) -> Result<String, Box<dyn std::error::Error>> {
+    cwd.file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .filter(|n| !n.is_empty())
+        .ok_or_else(|| {
+            "cannot derive a project name from this directory; pass one explicitly".into()
+        })
 }
 
 fn cmd_sync(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {

@@ -96,7 +96,7 @@ Both in one step: `... | sh -s -- --purge`
 | Command | Purpose |
 |---|---|
 | `tnv init [--passphrase]` | create the vault |
-| `tnv link <project>` | bind current directory ↔ vault namespace (`acme/api`) |
+| `tnv link [project]` | bind current directory ↔ vault namespace (`acme/api`); no name → offers the folder name |
 | `tnv sync` | review `.env` edits into the vault (interactive diff screen) |
 | `tnv add K=V` / `rm K` / `get K` / `list` | vault CRUD on the linked project |
 | `tnv share [project]` | print a one-time code (`--offline`, `--ttl`, `--relay`) |
