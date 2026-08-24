@@ -30,8 +30,7 @@ $ tnv receive ember-falcon-lime-quartz-9f86d081…
 - **Teams** — run your own blind relay with one Docker Compose file:
   [docs/relay-selfhost.md](docs/relay-selfhost.md).
 
-Full architecture, crypto byte-layouts, and staged roadmap:
-[docs/PLAN.md](docs/PLAN.md). Security analysis: [docs/threat-model.md](docs/threat-model.md).
+Security analysis: [docs/threat-model.md](docs/threat-model.md).
 
 ## Install
 

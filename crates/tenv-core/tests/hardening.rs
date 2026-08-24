@@ -3,7 +3,7 @@
 //!
 //! These are "fuzz-lite" checks — deterministic pseudo-random generation plus
 //! exhaustive truncation. A real `cargo-fuzz` target is a natural follow-up
-//! (see docs/PLAN.md §12) but needs nightly tooling; these run everywhere.
+//! but needs nightly tooling; these run everywhere.
 
 use tenv_core::envparser::{self, MAX_LINE_BYTES, ParseErrorKind};
 
