@@ -62,3 +62,15 @@ jobs:
         with:
           files: |
             terms-env-*
+
+  installers:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Attach installer scripts to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            install.sh
+            install.ps1

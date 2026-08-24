@@ -35,15 +35,40 @@ Full architecture, crypto byte-layouts, and staged roadmap:
 
 ## Install
 
-From source (Rust 1.85+):
+macOS & Linux (one-liner):
 
 ```bash
-cargo install --path crates/tenv-cli
+curl -fsSL https://raw.githubusercontent.com/Joshua-OA/terms-env/main/install.sh | sh
+```
+
+Windows (PowerShell):
+
+```powershell
+irm https://raw.githubusercontent.com/Joshua-OA/terms-env/main/install.ps1 | iex
+```
+
+The scripts pick the right prebuilt binary for your machine, verify it
+against the SHA-256 checksum published with the release, and install:
+
+| Platform | Binary lands in |
+|---|---|
+| macOS / Linux | `~/.local/bin/tnv` (PATH hint printed if needed) |
+| Windows | `%LOCALAPPDATA%\Programs\terms-env\tnv.exe` (user PATH updated) |
+
+Options: `--version vX.Y.Z` pins a release, `--prefix <dir>` changes the
+install root, `--no-verify` skips checksum verification. Pass them after
+`sh -s --` when piping (`... \| sh -s -- --version v0.1.0`).
+
+From source instead (Rust 1.85+):
+
+```bash
+cargo install --path crates/tenv-cli   # or --git https://github.com/Joshua-OA/terms-env tenv-cli
 tnv --version
 ```
 
-Prebuilt binaries: see GitHub Releases (macOS arm64/x64, Linux x64,
-Windows x64) with SHA-256 checksums.
+Prebuilt assets per release — macOS arm64/x64, Linux x64, Windows x64,
+each with a `.sha256` checksum:
+https://github.com/Joshua-OA/terms-env/releases
 
 ## Daily commands
 
