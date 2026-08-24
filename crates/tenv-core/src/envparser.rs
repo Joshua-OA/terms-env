@@ -11,11 +11,15 @@
 //! - duplicate keys: last occurrence wins, keeping its original position
 //! - variable interpolation is intentionally NOT performed
 
+/// Refuse absurdly long logical lines instead of allocating without bound.
+pub const MAX_LINE_BYTES: usize = 1024 * 1024;
+
 use crate::domain::{EnvFile, EnvVar};
 use std::fmt;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ParseErrorKind {
+    LineTooLong,
     MissingSeparator,
     InvalidKey(String),
     UnterminatedQuote,
@@ -32,6 +36,7 @@ impl fmt::Display for ParseError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, ".env line {}: ", self.line)?;
         match &self.kind {
+            ParseErrorKind::LineTooLong => write!(f, "line exceeds 1 MiB"),
             ParseErrorKind::MissingSeparator => write!(f, "expected KEY=value"),
             ParseErrorKind::InvalidKey(k) => write!(f, "invalid key `{k}`"),
             ParseErrorKind::UnterminatedQuote => write!(f, "unterminated quote"),
@@ -42,7 +47,9 @@ impl fmt::Display for ParseError {
 
 impl std::error::Error for ParseError {}
 
-pub fn parse(input: &str) -> Result<EnvFile, ParseError> {
+pub type Result<T> = std::result::Result<T, ParseError>;
+
+pub fn parse(input: &str) -> Result<EnvFile> {
     let input = input.strip_prefix('\u{feff}').unwrap_or(input);
     let mut file = EnvFile::new();
     let bytes = input.as_bytes();
@@ -51,7 +58,7 @@ pub fn parse(input: &str) -> Result<EnvFile, ParseError> {
 
     while i < bytes.len() {
         let line_start_no = line_no;
-        let mut line = read_logical_line(bytes, &mut i, &mut line_no);
+        let mut line = read_logical_line(bytes, &mut i, &mut line_no, line_start_no)?;
 
         if line.contains('\r') {
             line = line.replace("\r\n", "\n");
@@ -68,7 +75,7 @@ pub fn parse(input: &str) -> Result<EnvFile, ParseError> {
     Ok(file)
 }
 
-fn parse_record(line: &str, line_no: usize) -> Result<EnvVar, ParseError> {
+fn parse_record(line: &str, line_no: usize) -> Result<EnvVar> {
     let body = line
         .strip_prefix("export ")
         .or_else(|| line.strip_prefix("export\t"))
@@ -99,7 +106,7 @@ fn parse_record(line: &str, line_no: usize) -> Result<EnvVar, ParseError> {
     })
 }
 
-fn decode_value(raw: &str, line_no: usize) -> Result<String, ParseError> {
+fn decode_value(raw: &str, line_no: usize) -> Result<String> {
     match raw.chars().next() {
         Some('\'') | Some('"') => {
             let quote = raw.chars().next().unwrap();
@@ -177,7 +184,12 @@ fn strip_inline_comment(s: &str) -> &str {
     }
 }
 
-fn read_logical_line(bytes: &[u8], i: &mut usize, line_no: &mut usize) -> String {
+fn read_logical_line(
+    bytes: &[u8],
+    i: &mut usize,
+    line_no: &mut usize,
+    start_line: usize,
+) -> Result<String> {
     let start = *i;
     let mut escaped = false;
     let mut in_double = false;
@@ -209,7 +221,13 @@ fn read_logical_line(bytes: &[u8], i: &mut usize, line_no: &mut usize) -> String
         *i += 1;
         *line_no += 1;
     }
-    String::from_utf8_lossy(&bytes[start..*i]).into_owned()
+    if *i - start > MAX_LINE_BYTES {
+        return Err(ParseError {
+            line: start_line,
+            kind: ParseErrorKind::LineTooLong,
+        });
+    }
+    Ok(String::from_utf8_lossy(&bytes[start..*i]).into_owned())
 }
 
 fn is_valid_key(key: &str) -> bool {

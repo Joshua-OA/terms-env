@@ -279,7 +279,11 @@ pub fn open_blob(
         }
     };
 
-    verify_payload(&plaintext)
+    let mut plaintext = plaintext;
+    let payload = verify_payload(&plaintext);
+    use zeroize::Zeroize as _;
+    plaintext.zeroize();
+    payload
 }
 
 fn x25519_shared(sk: &[u8; 32], peer_pk: &[u8; 32]) -> Result<[u8; 32]> {

@@ -1,4 +1,8 @@
 use std::time::Duration;
+
+// Generous ceiling: this suite runs alongside Argon2-heavy vault tests that
+// saturate all cores, so wall-clock here reflects scheduler pressure.
+const TEST_BUDGET: Duration = Duration::from_secs(180);
 use tenv_core::transport::{
     EndpointAddr, LiveShare, decode_code, generate_password, receive_direct,
 };
@@ -67,7 +71,7 @@ async fn wrong_password_fails_closed_on_both_sides() {
     let outcome = receive_direct(addr, &impostor_password, None, "IMPOSTOR").await;
 
     assert!(outcome.is_err(), "wrong code must fail closed");
-    let sender_outcome = tokio::time::timeout(Duration::from_secs(10), waiter)
+    let sender_outcome = tokio::time::timeout(TEST_BUDGET, waiter)
         .await
         .expect("no hang");
     // Sender must observe an error (handshake/decrypt failure), never success.

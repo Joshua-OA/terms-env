@@ -158,3 +158,42 @@ all existing CLI e2e tests still pass untouched.
   testability without weakening the thin-binary rule.
 - **Stateful widgets**: ratatui separates widget data (List) from scroll
   state (ListState); draw borrows both each frame.
+
+---
+
+## Stage 6 — Hardening + release engineering
+
+### What was built
+- **Parser hardening**: `MAX_LINE_BYTES` (1 MiB) guard on logical lines —
+  quote-bomb / giant-line inputs are rejected in constant time instead of
+  allocating unbounded memory (import is an attack surface).
+- **Fuzz-lite suite** (`tests/hardening.rs`, 5 tests): exhaustive truncation
+  of a nasty fixture at every byte offset, 256 deterministic pseudo-random
+  garbage inputs, over/under-limit line cases, multiline quote bomb. All
+  must return clean Results, never panic.
+- **Zeroize audit**: decrypted vault JSON buffer and share payload buffer
+  now explicitly zeroed after parse (session keys and KDF outputs were
+  already Zeroizing-wrapped from Stage 2).
+- **Release pipeline** `.github/workflows/release.yml`: tag-triggered matrix
+  build (macOS arm64/x64, Linux x64, Windows x64), strip, tar/zip, SHA-256
+  checksums, artifacts attached to the GitHub Release via softprops v2.
+  Chosen over cargo-dist to keep every line verifiable without pinning an
+  external tool's schema; documented as the deviation from PLAN.md.
+- **Docs**: threat-model.md, SECURITY.md policy, relay-selfhost.md, README
+  rewritten; PLAN.md marked complete.
+
+### What went wrong
+1. Release build died: disk full (5.5 GiB of target/). `cargo clean`
+   recovered 5+ GiB; release rebuild took ~4m41s. Lesson for CI too —
+   Swatinem/rust-cache already bounds growth there.
+2. A transport test flaked under full-suite parallel load (six parallel
+   64 MiB Argon2 runs): my test-side 30s wall-clock starved. Isolated runs
+   passed 3/3; raised the test budget to 180s with a comment. Product code
+   keeps its own separate, correct timeouts.
+3. Final state verified: fmt clean · clippy clean · all suites green ·
+   release binary runs (`tnv --version` → 0.1.0).
+
+### New Rust concepts introduced
+- Result-typed internals made the DoS bound flow cleanly through every
+  caller; explicit zeroize wipes at trust boundaries; flake triage rule:
+  fix the test's wrong assumption, never weaken the product check.

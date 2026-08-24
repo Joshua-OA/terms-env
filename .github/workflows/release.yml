@@ -1,0 +1,64 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            target: aarch64-apple-darwin
+            use_tar: true
+          - os: macos-13
+            target: x86_64-apple-darwin
+            use_tar: true
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            use_tar: true
+          - os: windows-2022
+            target: x86_64-pc-windows-msvc
+            use_tar: false
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build release binary
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Strip (unix)
+        if: matrix.use_tar
+        run: strip target/${{ matrix.target }}/release/tnv
+
+      - name: Package (unix)
+        if: matrix.use_tar
+        run: |
+          cd target/${{ matrix.target }}/release
+          tar czf ../../../terms-env-${{ matrix.target }}.tar.gz tnv
+          cd ../../..
+          shasum -a 256 terms-env-${{ matrix.target }}.tar.gz > terms-env-${{ matrix.target }}.tar.gz.sha256
+
+      - name: Package (windows)
+        if: ${{ !matrix.use_tar }}
+        shell: pwsh
+        run: |
+          Compress-Archive -Path target/${{ matrix.target }}/release/tnv.exe `
+            -DestinationPath terms-env-${{ matrix.target }}.zip
+          $hash = (Get-FileHash terms-env-${{ matrix.target }}.zip -Algorithm SHA256).Hash.ToLower()
+          "$hash  terms-env-${{ matrix.target }}.zip" | Out-File terms-env-${{ matrix.target }}.zip.sha256
+
+      - name: Upload artifacts to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            terms-env-*

@@ -1,7 +1,8 @@
 # terms-env — Master Build Plan
 
 > Single source of truth. Every stage of implementation references this file.
-> Status: **approved** · Last updated: start of Stage 0 · Platform: Windows / Linux / macOS
+> Status: **v0.1.0 feature-complete (Stages 0–6 delivered)** · Platform: Windows / Linux / macOS
+> Deviations from original plan are recorded in docs/learnings*.md.
 
 ---
 

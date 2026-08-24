@@ -261,10 +261,12 @@ pub fn open(home: &Path, passphrase: Option<&str>, keys: &dyn KeyStore) -> Resul
     offset += crypto::NONCE_LEN;
 
     let key = unlock_key(&stored_unlock, passphrase, keys)?;
-    let plaintext =
+    let mut plaintext =
         crypto::open(&key, &nonce, &raw[offset..]).map_err(|_| VaultError::WrongPassphrase)?;
     let data: VaultData =
         serde_json::from_slice(&plaintext).map_err(|e| VaultError::Corrupt(e.to_string()))?;
+    use zeroize::Zeroize as _;
+    plaintext.zeroize();
 
     Ok(Vault {
         path,
