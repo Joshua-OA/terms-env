@@ -162,7 +162,7 @@ Continues from `learnings02.md` (Stages 3-6).
 
 ---
 
-## Stage 9 — post-release polish: `tnv link` folder-name offer (unreleased)
+## Stage 9 — post-release polish: `tnv link` folder-name offer (v0.1.2)
 
 ### What was built
 - `tnv link` with no argument no longer hard-errors. On a TTY it asks
@@ -183,4 +183,4 @@ Continues from `learnings02.md` (Stages 3-6).
 
 ### Verified end state
 - Full workspace suite 14/14 green, clippy `-D warnings`, fmt clean.
-- Ships in the next tag; v0.1.1 binaries keep the required-arg behavior.
+- Released as v0.1.2.
