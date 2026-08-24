@@ -37,4 +37,5 @@ keyring = { version = "3", features = ["apple-native"] }
 keyring = { version = "3", features = ["windows-native"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-keyring = { version = "3", features = ["linux-native-sync-persistent"] }
+# libsecret via dbus; needs libdbus-1-dev + pkg-config when building from source.
+keyring = { version = "3", features = ["sync-secret-service", "crypto-rust"] }
