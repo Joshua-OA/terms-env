@@ -16,7 +16,7 @@ jobs:
           - os: macos-14
             target: aarch64-apple-darwin
             use_tar: true
-          - os: macos-13
+          - os: macos-15-intel
             target: x86_64-apple-darwin
             use_tar: true
           - os: ubuntu-22.04
@@ -27,7 +27,7 @@ jobs:
             use_tar: false
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
@@ -67,7 +67,7 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Attach installer scripts to release
         uses: softprops/action-gh-release@v2
         with:

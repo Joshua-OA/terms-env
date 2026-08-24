@@ -48,6 +48,18 @@ Continues from `learnings02.md` (Stages 3-6).
    built from it would 404 in production. Lesson: distribution scripts
    hardcode the owner/repo string, so audit *all* metadata sources
    against `git remote -v` before shipping them.
+3. **First release run hung on `macos-13` (Intel macOS) for 30+ min.**
+   GitHub retired the macOS 13 runner image on Dec 4 2025 (last free
+   Intel fleet); jobs on it queue forever with no error. Diagnosed by
+   contrast: every other matrix job finished in 3-6 min. Fixed by
+   migrating to the changelog's designated replacement label
+   `macos-15-intel`. Future note: GitHub sunsets ALL Intel macOS
+   runners after the macos-15 image retires (Fall 2027) — at that point
+   cross-compile `x86_64-apple-darwin` on an arm64 runner instead.
+4. Node 20 deprecation annotations on every job: `actions/checkout@v4`
+   fixed by bumping to v5; `softprops/action-gh-release@v2` cannot be
+   fixed on our side (upstream still targets Node 20; GitHub force-runs
+   it on Node 24) — cosmetic only, builds unaffected.
 
 ### Deferred (deliberate)
 - **Homebrew**: skipped this stage by decision. Plan agreed on record:
