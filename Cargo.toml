@@ -1,0 +1,13 @@
+[workspace]
+resolver = "2"
+members = ["crates/tenv-cli", "crates/tenv-core"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0"
+repository = "https://github.com/meister/terms-env"
+
+[workspace.dependencies]
+clap = { version = "4", features = ["derive"] }
+tenv-core = { path = "crates/tenv-core" }

@@ -1,0 +1,25 @@
+[package]
+name = "tenv-cli"
+description = "terms-env CLI: store and share .env secrets securely from the terminal"
+publish = false
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "tnv"
+path = "src/main.rs"
+
+[dependencies]
+clap.workspace = true
+ed25519-dalek = "2"
+rpassword = "7"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1"
+tenv-core.workspace = true
+tokio = { version = "1.53.1", features = ["rt-multi-thread"] }
+
+[dev-dependencies]
+assert_cmd = "2.2.2"
+predicates = "3.1.4"
+tempfile = "3.27.0"
