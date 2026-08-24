@@ -2,6 +2,7 @@ use clap::{Parser, Subcommand};
 use std::io::{BufRead, IsTerminal, Read};
 use std::path::PathBuf;
 use std::process::ExitCode;
+use tenv_cli::ui;
 use tenv_core::crypto::{DeviceKeys, fingerprint};
 use tenv_core::domain::EnvFile;
 use tenv_core::envparser::{self, Change};
@@ -243,23 +244,24 @@ fn cmd_sync(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    println!(
-        "{project} ← {}: {} change(s)",
-        disk_path.display(),
-        changes.len()
-    );
+    let chosen = choose_changes(
+        cli,
+        &format!("{project} ← {} ({})", disk_path.display(), changes.len()),
+        changes,
+    )?;
+    let selected = chosen.ok_or("aborted; nothing applied")?;
+    if selected.is_empty() && !cli.yes {
+        println!("no changes selected");
+        return Ok(());
+    }
+
     let mut applied = stored.clone();
-    let mut count = 0usize;
-    for change in &changes {
-        if !confirm(change, cli)? {
-            continue;
-        }
-        apply(&mut applied, change.clone());
-        count += 1;
+    for change in selected {
+        apply(&mut applied, change);
     }
     v.put_project(project, &applied);
     v.save()?;
-    println!("applied {count} change(s)");
+    println!("done");
     Ok(())
 }
 
@@ -331,12 +333,33 @@ async fn cmd_share(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let v = open_vault(cli)?;
     let keys = v.device_keys()?;
+    let cwd = std::env::current_dir()?;
+
     let (project_name, file) = match project {
         Some(name) => (name.to_string(), v.project(name)?),
-        None => {
-            let cwd = std::env::current_dir()?;
-            v.resolve_link(&cwd)?
-        }
+        None => match v.resolve_link(&cwd) {
+            Ok(found) => found,
+            Err(vault::VaultError::NoLinkForDirectory(_)) if ui::is_interactive() => {
+                // No link here: offer the full vault via the picker screen.
+                let here = v.resolve_link(&cwd).map(|(p, _)| p).ok();
+                let entries: Vec<ui::picker::ProjectEntry> = v
+                    .project_names()
+                    .into_iter()
+                    .map(|name| {
+                        let count = v.project(&name).map(|f| f.len()).unwrap_or(0);
+                        ui::picker::ProjectEntry {
+                            linked_here: here.as_deref() == Some(name.as_str()),
+                            name,
+                            key_count: count,
+                        }
+                    })
+                    .collect();
+                let chosen =
+                    ui::picker::run_picker(entries)?.ok_or("aborted; no project chosen")?;
+                (chosen.clone(), v.project(&chosen)?)
+            }
+            Err(e) => return Err(e.into()),
+        },
     };
     let relay_cfg = relay.map(str::to_string).or_else(load_relay_config);
     let relay_opt = relay_cfg.as_deref();
@@ -443,15 +466,26 @@ async fn land_share(
     let vk = ed25519_dalek::VerifyingKey::from_bytes(&payload.sender_pub)?;
     let sender_fp = fingerprint(&vk);
 
-    match v.peer_label(&sender_fp).cloned() {
-        Some(name) => println!("from {name} [{sender_fp}]"),
-        None => {
-            println!("first time seeing sender [{sender_fp}]");
-            if !confirm_raw("Trust and pin this sender?", cli.yes)? {
-                return Err("sender not trusted; share discarded".into());
+    if let Some(label) = v.peer_label(&sender_fp).cloned() {
+        println!("from {label} [{sender_fp}]");
+    } else if ui::is_interactive() && !cli.yes {
+        use ui::trust::{TrustDecision, run_trust};
+        println!("first share from [{sender_fp}]");
+        match run_trust(&sender_fp, None)? {
+            TrustDecision::AlwaysPin => {
+                v.pin_peer(sender_fp.clone(), format!("peer-{sender_fp}"));
+                println!("pinned — future shares verify automatically");
             }
-            v.pin_peer(sender_fp.clone(), format!("peer-{sender_fp}"));
+            TrustDecision::Once => println!("accepted for this share only"),
+            TrustDecision::Reject => return Err("rejected; nothing was written".into()),
         }
+    } else if cli.yes {
+        println!("unpinned sender accepted via --yes [{sender_fp}]");
+    } else {
+        return Err(format!(
+            "unknown sender {sender_fp}; run interactively to decide, or pass --yes"
+        )
+        .into());
     }
 
     let incoming: EnvFile = {
@@ -477,26 +511,35 @@ async fn land_share(
     let disk_path = cwd.join(".env");
     let disk = read_disk_env(&disk_path)?;
 
-    let merged_disk = envparser::merge(&disk, &incoming);
-    let merged_vault = envparser::merge(&stored, &incoming);
-    let changes = envparser::diff(&disk, &merged_disk);
+    let full_disk = envparser::merge(&disk, &incoming);
+    let changes = envparser::diff(&disk, &full_disk);
 
     println!(
-        "`{}` → {} ({} change(s), expires {})",
+        "`{}` → {} (expires {})",
         payload.project,
         project,
-        changes.len(),
         payload
             .expires_at
             .map(|t| t.to_string())
             .unwrap_or_else(|| "never".into())
     );
-    for c in &changes {
-        describe(c);
+
+    // Review what will change on disk; vault copy mirrors the same decision.
+    let chosen = choose_changes(cli, "incoming changes", changes)?;
+    let selected = chosen.ok_or("aborted; nothing written")?;
+    if selected.is_empty() && !cli.yes && !ui::is_interactive() {
+        println!("no changes selected");
+        return Ok(());
     }
-    if !changes.is_empty() && !cli.yes && !confirm_raw("Apply?", true)? {
-        return Err("aborted; nothing written".into());
+
+    let mut applied_disk = disk.clone();
+    let mut applied_vault = stored;
+    for change in &selected {
+        apply(&mut applied_disk, change.clone());
+        apply(&mut applied_vault, change.clone());
     }
+    let merged_disk = applied_disk;
+    let merged_vault = applied_vault;
 
     tenv_core::fsutil::atomic_write(&disk_path, envparser::serialize(&merged_disk).as_bytes())
         .map_err(|e| format!("write .env: {e}"))?;
@@ -558,17 +601,38 @@ fn load_relay_config() -> Option<String> {
 
 // ---------- shared UI helpers ----------
 
+/// Decide which changes to apply: TTY users get the ratatui review screen,
+/// `--yes` takes everything, pipes get a default-deny listing.
+fn choose_changes(
+    cli: &Cli,
+    title: &str,
+    changes: Vec<Change>,
+) -> Result<Option<Vec<Change>>, Box<dyn std::error::Error>> {
+    if changes.is_empty() {
+        return Ok(Some(Vec::new()));
+    }
+    if cli.yes {
+        for c in &changes {
+            describe(c);
+        }
+        return Ok(Some(changes));
+    }
+    if ui::is_interactive() {
+        return Ok(ui::review::run_review(title, changes)?);
+    }
+    for c in &changes {
+        describe(c);
+    }
+    println!("(non-interactive session; rerun with --yes to apply)");
+    Ok(None)
+}
+
 fn read_disk_env(path: &PathBuf) -> Result<EnvFile, Box<dyn std::error::Error>> {
     match std::fs::read_to_string(path) {
         Ok(text) => Ok(envparser::parse(&text)?),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(EnvFile::new()),
         Err(e) => Err(e.into()),
     }
-}
-
-fn confirm(change: &Change, cli: &Cli) -> Result<bool, Box<dyn std::error::Error>> {
-    describe(change);
-    confirm_raw("apply?", cli.yes || !std::io::stdin().is_terminal())
 }
 
 fn describe(change: &Change) {
@@ -579,18 +643,6 @@ fn describe(change: &Change) {
         }
         Change::Removed { key, .. } => println!("  - {key}"),
     }
-}
-
-fn confirm_raw(question: &str, default_yes: bool) -> Result<bool, Box<dyn std::error::Error>> {
-    if !std::io::stdin().is_terminal() {
-        return Ok(default_yes);
-    }
-    print!("{question} [y/N] ");
-    use std::io::Write;
-    std::io::stdout().flush()?;
-    let mut answer = String::new();
-    std::io::stdin().lock().read_line(&mut answer)?;
-    Ok(matches!(answer.trim(), "y" | "Y" | "yes"))
 }
 
 fn apply(file: &mut EnvFile, change: Change) {

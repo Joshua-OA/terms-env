@@ -114,3 +114,47 @@ works end-to-end in tests: init → link → add/get/list/rm → sync disk edits
   (Debug + Clone bounds shape your handler struct design).
 - **Shutdown choreography** as an explicit design activity, not an
   afterthought: every `.close()` has an owner and a waiting counterpart.
+
+---
+
+## Stage 5 — ratatui screens with strict non-TTY degradation
+
+### What was built
+- `crates/tenv-cli/src/ui/` — three keyboard-first screens over a shared
+  terminal guard (raw mode + alternate screen, Drop-restore even on panic):
+  - **review**: checkbox list of Added(green)/Updated(yellow)/Removed(red)
+    changes; j/k move, space toggle, a all, n none, Enter apply, q abort.
+    Values masked like the plain output.
+  - **trust**: first-time sender prompt — always pin / accept once / reject,
+    fingerprint shown prominently.
+  - **picker**: project chooser for `share` outside a linked directory.
+- Wiring: `sync` and incoming-share landing both route through
+  `choose_changes()` — TTY → review screen, `--yes` → everything (listed),
+  pipe → default-deny listing telling you to pass --yes.
+- `tnv-cli` gained a tiny `lib.rs` so integration tests can import the crate's
+  UI state machines (binaries are not importable).
+- 6 unit tests cover ReviewState logic: initial state, toggle isolation,
+  cursor clamping, all/none, selection order, empty-input safety.
+
+### What went wrong
+1. First review.rs draft fought ListState manually (`mem::take` churn) and
+   never actually rendered highlights — rewrote with stateful widget
+   rendering (`render_stateful_widget`), which is the intended pattern.
+2. `ListItem.style` field is private; must use `.style(...)` builder.
+3. `Constraint::vertical` doesn't exist in ratatui 0.29 — use
+   `Layout::default().direction(Vertical).constraints([...])`.
+4. Integration test importing the bin crate failed until lib.rs existed;
+   then `mod ui` in main.rs duplicated it — declaration lives ONLY in lib.rs
+   now, main consumes via `tenv_cli::ui`.
+
+### Verified end state
+61/61 tests · fmt/clippy `-D warnings` clean. Non-TTY behavior unchanged:
+all existing CLI e2e tests still pass untouched.
+
+### New Rust concepts introduced
+- **RAII guards**: TerminalGuard restores raw mode in Drop even when an error
+  propagates via `?` — no try/finally needed.
+- **lib+bin hybrid packages**: one Cargo package, two crates; lib exists for
+  testability without weakening the thin-binary rule.
+- **Stateful widgets**: ratatui separates widget data (List) from scroll
+  state (ListState); draw borrows both each frame.
